@@ -7,6 +7,9 @@
 # testing
 /coverage
 
+# salesforce cli
+.sf/
+
 # next.js
 /.next/
 /out/
