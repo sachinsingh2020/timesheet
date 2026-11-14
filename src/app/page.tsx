@@ -40,16 +40,10 @@ interface SavedProfile {
   displayName: string;
 }
 
-// Default initial profiles known to exist
-const DEFAULT_PROFILES: SavedProfile[] = [
-  { username: '202507', password: '175092', displayName: 'Sachin Singh' },
-  { username: '202501', password: '582194', displayName: 'Ankit Kumar' }
-];
-
 export default function Home() {
   // Profiles in localStorage
   const [savedProfiles, setSavedProfiles] = useState<SavedProfile[]>([]);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(true);
 
   // Authentication & Form State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -80,7 +74,7 @@ export default function Home() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<string>('');
 
-  // Load profiles from localStorage on mount
+  // Load profiles from localStorage on mount (no default accounts)
   useEffect(() => {
     try {
       const stored = localStorage.getItem('astrea_saved_profiles');
@@ -88,14 +82,15 @@ export default function Home() {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setSavedProfiles(parsed);
+          setShowAddForm(false);
           return;
         }
       }
-      // Seed default profiles if none exist
-      localStorage.setItem('astrea_saved_profiles', JSON.stringify(DEFAULT_PROFILES));
-      setSavedProfiles(DEFAULT_PROFILES);
+      setSavedProfiles([]);
+      setShowAddForm(true);
     } catch {
-      setSavedProfiles(DEFAULT_PROFILES);
+      setSavedProfiles([]);
+      setShowAddForm(true);
     }
   }, []);
 
@@ -180,6 +175,9 @@ export default function Home() {
     const updated = savedProfiles.filter(p => p.username !== userToRemove);
     setSavedProfiles(updated);
     localStorage.setItem('astrea_saved_profiles', JSON.stringify(updated));
+    if (updated.length === 0) {
+      setShowAddForm(true);
+    }
   };
 
   // Refresh Attendance Status
@@ -242,7 +240,7 @@ export default function Home() {
   // Switch User / Return to Profile Box Screen
   const handleSwitchUser = () => {
     setIsLoggedIn(false);
-    setShowAddForm(false);
+    setShowAddForm(savedProfiles.length === 0);
     setUsername('');
     setPassword('');
     setSuccessMsg(null);
@@ -372,13 +370,15 @@ export default function Home() {
                   <UserPlus className="w-4 h-4 text-blue-600" />
                   Add & Login New Employee
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="text-xs text-blue-600 hover:underline font-medium"
-                >
-                  ← Back to Profiles
-                </button>
+                {savedProfiles.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddForm(false)}
+                    className="text-xs text-blue-600 hover:underline font-medium"
+                  >
+                    ← Back to Profiles
+                  </button>
+                )}
               </div>
 
               <div className="space-y-4">
