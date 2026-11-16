@@ -77,6 +77,12 @@ function formatTime12Hour(timeStr?: string | null, isOutTime?: boolean): string 
   return `${hours}:${minutes} ${period}`;
 }
 
+// Format raw punch time without AM/PM (e.g. "09:35:37")
+function formatRawTime(timeStr?: string | null): string {
+  if (!timeStr || timeStr === '--' || timeStr.trim() === '') return '--:--';
+  return timeStr.trim().replace(/Z$/i, '').split('.')[0];
+}
+
 // Calculate elapsed worked hours and remaining time for a 9-hour shift
 function getWorkedTime(punchInStr: string | null, totalHoursStr?: string) {
   if (!punchInStr) {
@@ -862,11 +868,11 @@ export default function Home() {
             <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 mb-4 text-xs grid grid-cols-2 gap-2 text-left">
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Punch In Time</span>
-                <span className="font-mono font-bold text-slate-700">{formatTime12Hour(todayPunchIn, false)}</span>
+                <span className="font-mono font-bold text-slate-700">{formatRawTime(todayPunchIn)}</span>
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Punch Out Time</span>
-                <span className="font-mono font-bold text-slate-700">{formatTime12Hour(todayPunchOut, true)}</span>
+                <span className="font-mono font-bold text-slate-700">{formatRawTime(todayPunchOut)}</span>
               </div>
             </div>
           )}
@@ -1037,7 +1043,7 @@ export default function Home() {
                 <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 mb-5 text-xs text-left space-y-2">
                   <div className="flex justify-between items-center text-slate-500">
                     <span>Punch In Time:</span>
-                    <span className="font-mono font-bold text-slate-700">{formatTime12Hour(todayPunchIn, false)}</span>
+                    <span className="font-mono font-bold text-slate-700">{formatRawTime(todayPunchIn)}</span>
                   </div>
                   <div className="flex justify-between items-center text-slate-500">
                     <span>Time Worked:</span>
