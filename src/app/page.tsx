@@ -10,6 +10,7 @@ import {
   User, 
   RefreshCw, 
   AlertCircle, 
+  AlertTriangle,
   BookOpen, 
   ExternalLink,
   Eye,
@@ -38,6 +39,112 @@ interface SavedProfile {
   username: string;
   password: string;
   displayName: string;
+}
+
+// Format time string (e.g., "09:35:37.565Z" or "06:35:40") to 12-hour AM/PM format ("9:35 AM", "6:35 PM")
+function formatTime12Hour(timeStr?: string | null, isOutTime?: boolean): string {
+  if (!timeStr || timeStr === '--' || timeStr.trim() === '') return '--';
+  const clean = timeStr.trim().replace(/Z$/i, '');
+  if (/AM|PM/i.test(clean)) return clean;
+
+  const match = clean.match(/^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?/);
+  if (!match) return timeStr;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2];
+
+  let period = 'AM';
+  if (hours >= 12) {
+    period = 'PM';
+    if (hours > 12) hours -= 12;
+  } else if (hours === 0) {
+    hours = 12;
+    period = 'AM';
+  } else {
+    // If hours is between 1 and 8 for punch out time, it is PM (e.g. 1:00 PM to 8:59 PM)
+    if (isOutTime && hours < 9) {
+      period = 'PM';
+    } else {
+      period = 'AM';
+    }
+  }
+
+  return `${hours}:${minutes} ${period}`;
+}
+
+// Calculate elapsed worked hours and remaining time for a 9-hour shift
+function getWorkedTime(punchInStr: string | null, totalHoursStr?: string) {
+  if (!punchInStr) {
+    if (totalHoursStr && totalHoursStr.includes(':')) {
+      const [thH, thM] = totalHoursStr.split(':').map(Number);
+      if (!isNaN(thH) && !isNaN(thM)) {
+        const totalMinutes = thH * 60 + thM;
+        const totalHoursDecimal = totalMinutes / 60;
+        const remainingMinutesTotal = Math.max(0, 9 * 60 - totalMinutes);
+        return {
+          hours: thH,
+          minutes: thM,
+          totalHoursDecimal,
+          hasCompleted9Hours: totalHoursDecimal >= 9,
+          remainingHours: Math.floor(remainingMinutesTotal / 60),
+          remainingMinutes: remainingMinutesTotal % 60
+        };
+      }
+    }
+    return {
+      hours: 0,
+      minutes: 0,
+      totalHoursDecimal: 0,
+      hasCompleted9Hours: false,
+      remainingHours: 9,
+      remainingMinutes: 0
+    };
+  }
+
+  const clean = punchInStr.trim().replace(/Z$/i, '');
+  const isPM = /PM/i.test(clean);
+  const isAM = /AM/i.test(clean);
+  const match = clean.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+
+  if (!match) {
+    return {
+      hours: 0,
+      minutes: 0,
+      totalHoursDecimal: 0,
+      hasCompleted9Hours: false,
+      remainingHours: 9,
+      remainingMinutes: 0
+    };
+  }
+
+  let inHour = parseInt(match[1], 10);
+  const inMinute = parseInt(match[2], 10);
+  const inSecond = match[3] ? parseInt(match[3], 10) : 0;
+
+  if (isPM && inHour < 12) inHour += 12;
+  if (isAM && inHour === 12) inHour = 0;
+
+  const now = new Date();
+  const punchInDate = new Date();
+  punchInDate.setHours(inHour, inMinute, inSecond, 0);
+
+  let diffMs = now.getTime() - punchInDate.getTime();
+  if (diffMs < 0) diffMs = 0;
+
+  const totalMinutes = Math.floor(diffMs / (1000 * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const totalHoursDecimal = diffMs / (1000 * 60 * 60);
+  const remainingMinutesTotal = Math.max(0, 9 * 60 - totalMinutes);
+
+  return {
+    hours,
+    minutes,
+    totalHoursDecimal: Number(totalHoursDecimal.toFixed(2)),
+    hasCompleted9Hours: totalHoursDecimal >= 9,
+    remainingHours: Math.floor(remainingMinutesTotal / 60),
+    remainingMinutes: remainingMinutesTotal % 60
+  };
 }
 
 export default function Home() {
@@ -73,6 +180,7 @@ export default function Home() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<string>('');
+  const [showEarlyPunchModal, setShowEarlyPunchModal] = useState(false);
 
   // Load profiles from localStorage on mount (no default accounts)
   useEffect(() => {
@@ -235,6 +343,24 @@ export default function Home() {
     } finally {
       setPunching(false);
     }
+  };
+
+  // Intercept punch out click: Check if user has completed 9 hours
+  const handlePunchClick = () => {
+    if (punchStatus === 'in') {
+      const worked = getWorkedTime(todayPunchIn, totalHours);
+      if (!worked.hasCompleted9Hours) {
+        setShowEarlyPunchModal(true);
+        return;
+      }
+    }
+    handlePunch();
+  };
+
+  // Confirm punch out from warning modal
+  const confirmEarlyPunchOut = () => {
+    setShowEarlyPunchModal(false);
+    handlePunch();
   };
 
   // Switch User / Return to Profile Box Screen
@@ -567,11 +693,11 @@ export default function Home() {
             <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 mb-4 text-xs grid grid-cols-2 gap-2 text-left">
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Punch In Time</span>
-                <span className="font-mono font-bold text-slate-700">{todayPunchIn || '--:--'}</span>
+                <span className="font-mono font-bold text-slate-700">{formatTime12Hour(todayPunchIn, false)}</span>
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Punch Out Time</span>
-                <span className="font-mono font-bold text-slate-700">{todayPunchOut || '--:--'}</span>
+                <span className="font-mono font-bold text-slate-700">{formatTime12Hour(todayPunchOut, true)}</span>
               </div>
             </div>
           )}
@@ -626,7 +752,7 @@ export default function Home() {
           ) : (
             <button
               type="button"
-              onClick={handlePunch}
+              onClick={handlePunchClick}
               disabled={punching || refreshLoading}
               className={`w-full py-5 rounded-2xl text-lg font-bold shadow-md active:scale-95 transition-all flex items-center justify-center gap-3 ${
                 punchStatus === 'in'
@@ -686,9 +812,9 @@ export default function Home() {
                       <span className="text-[10px] text-slate-400 ml-1.5">{rec.date}</span>
                     </div>
                     <div className="font-mono text-right text-[11px]">
-                      <span className="text-emerald-600 font-semibold">{rec.inTime ? rec.inTime.substring(0, 8) : '--'}</span>
+                      <span className="text-emerald-600 font-semibold">{formatTime12Hour(rec.inTime, false)}</span>
                       <span className="text-slate-300 mx-1">→</span>
-                      <span className="text-slate-600">{rec.outTime ? rec.outTime.substring(0, 8) : '--'}</span>
+                      <span className="text-slate-600">{formatTime12Hour(rec.outTime, true)}</span>
                     </div>
                   </div>
                 ))
@@ -721,6 +847,63 @@ export default function Home() {
       <footer className="text-center py-3 text-[11px] text-slate-400">
         Astrea Timesheet Assistant &bull; Connected to Salesforce Sites
       </footer>
+
+      {/* Early Punch Out Confirmation Modal */}
+      {showEarlyPunchModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-4 shadow-sm">
+              <AlertTriangle className="w-7 h-7" />
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-800 mb-1.5">Early Punch Out</h3>
+            <p className="text-xs text-slate-600 mb-4 font-medium leading-relaxed">
+              You have not completed 9 hours yet, are you sure you want to punch out?
+            </p>
+
+            {/* Time progress summary */}
+            {(() => {
+              const worked = getWorkedTime(todayPunchIn, totalHours);
+              return (
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 mb-5 text-xs text-left space-y-2">
+                  <div className="flex justify-between items-center text-slate-500">
+                    <span>Punch In Time:</span>
+                    <span className="font-mono font-bold text-slate-700">{formatTime12Hour(todayPunchIn, false)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-500">
+                    <span>Time Worked:</span>
+                    <span className="font-mono font-bold text-amber-600">{worked.hours}h {worked.minutes}m</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-500 border-t border-slate-200/60 pt-1.5">
+                    <span>Remaining for 9 Hours:</span>
+                    <span className="font-mono font-bold text-slate-700">{worked.remainingHours}h {worked.remainingMinutes}m</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={confirmEarlyPunchOut}
+                disabled={punching}
+                className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-md shadow-rose-200 active:scale-95 transition flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Yes, Punch Out</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowEarlyPunchModal(false)}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold active:scale-95 transition"
+              >
+                Cancel (Stay Punched In)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
