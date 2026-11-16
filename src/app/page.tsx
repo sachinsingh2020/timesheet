@@ -25,7 +25,12 @@ import {
   UserPlus,
   Trash2,
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  Smartphone,
+  Share,
+  PlusSquare,
+  Download,
+  X
 } from 'lucide-react';
 
 interface PunchRecord {
@@ -182,6 +187,12 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState<string>('');
   const [showEarlyPunchModal, setShowEarlyPunchModal] = useState(false);
 
+  // PWA / Add to Home Screen State
+  const [isInstalled, setIsInstalled] = useState(true); // Default true until verified on client
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [dismissedInSession, setDismissedInSession] = useState(false);
+
   // Load profiles from localStorage on mount (no default accounts)
   useEffect(() => {
     try {
@@ -210,6 +221,75 @@ export default function Home() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Detect if app is already running in standalone (added to home screen) or installed
+  useEffect(() => {
+    const checkStandalone = () => {
+      if (typeof window === 'undefined') return true;
+
+      const isStandalone = 
+        window.matchMedia('(display-mode: standalone)').matches ||
+        (window.navigator as any).standalone === true ||
+        document.referrer.includes('android-app://');
+
+      const storedInstalled = localStorage.getItem('astrea_pwa_installed') === 'true';
+
+      if (isStandalone || storedInstalled) {
+        setIsInstalled(true);
+        return true;
+      }
+      setIsInstalled(false);
+      return false;
+    };
+
+    if (checkStandalone()) return;
+
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstalled(false);
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      localStorage.setItem('astrea_pwa_installed', 'true');
+      setDeferredPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    const mediaQuery = window.matchMedia('(display-mode: standalone)');
+    const handleMediaChange = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        setIsInstalled(true);
+        localStorage.setItem('astrea_pwa_installed', 'true');
+      }
+    };
+    mediaQuery.addEventListener('change', handleMediaChange);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      mediaQuery.removeEventListener('change', handleMediaChange);
+    };
+  }, []);
+
+  // Handle Add to Home Screen Click
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+        localStorage.setItem('astrea_pwa_installed', 'true');
+      }
+      setDeferredPrompt(null);
+      return;
+    }
+    // If no native prompt is available (e.g. iOS Safari), show the visual guide
+    setShowInstallModal(true);
+  };
 
   // Quick 1-Tap Login from a Profile Box
   const handleQuickLogin = async (profile: SavedProfile) => {
@@ -591,6 +671,95 @@ export default function Home() {
         <footer className="text-center py-3 text-[11px] text-slate-400">
           Astrea Timesheet Portal &bull; Fast Profile Switcher
         </footer>
+
+        {/* Floating "Add to Home Screen" Corner Button */}
+        {!isInstalled && !dismissedInSession && (
+          <div className="fixed bottom-4 right-4 z-40 flex items-center shadow-lg shadow-blue-900/10 rounded-full bg-slate-900/95 border border-slate-700/80 p-1 text-white backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <button
+              type="button"
+              onClick={handleInstallClick}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white hover:text-blue-400 active:scale-95 transition"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span>Add to Home Screen</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDismissedInSession(true)}
+              aria-label="Close"
+              className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition mr-0.5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Add to Home Screen Instructions Modal */}
+        {showInstallModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center animate-in fade-in zoom-in-95 duration-150">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 shadow-sm">
+                <Smartphone className="w-7 h-7" />
+              </div>
+
+              <h3 className="text-lg font-bold text-slate-800 mb-1">Add to Home Screen</h3>
+              <p className="text-xs text-slate-500 mb-5">
+                Install Astrea Timesheet on your phone for fast, 1-tap access like a native mobile app.
+              </p>
+
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs text-left space-y-3 mb-5">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                    1
+                  </div>
+                  <div className="text-slate-600">
+                    Tap the <strong className="text-slate-800">Share</strong> button <Share className="w-3.5 h-3.5 inline mx-0.5 text-blue-600" /> in Safari, or browser menu <strong className="text-slate-800">(⋮)</strong> in Chrome.
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                    2
+                  </div>
+                  <div className="text-slate-600">
+                    Scroll down and tap <strong className="text-slate-800">"Add to Home Screen"</strong> <PlusSquare className="w-3.5 h-3.5 inline mx-0.5 text-blue-600" /> or <strong className="text-slate-800">"Install app"</strong>.
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                    3
+                  </div>
+                  <div className="text-slate-600">
+                    Tap <strong className="text-slate-800">"Add"</strong> in the top right corner. Done!
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setShowInstallModal(false)}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-200 active:scale-95 transition"
+                >
+                  Got It
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsInstalled(true);
+                    localStorage.setItem('astrea_pwa_installed', 'true');
+                    setShowInstallModal(false);
+                  }}
+                  className="w-full py-2 text-slate-400 hover:text-slate-600 text-xs font-medium"
+                >
+                  I have already added it
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     );
   }
@@ -899,6 +1068,95 @@ export default function Home() {
                 className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold active:scale-95 transition"
               >
                 Cancel (Stay Punched In)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating "Add to Home Screen" Corner Button */}
+      {!isInstalled && !dismissedInSession && (
+        <div className="fixed bottom-4 right-4 z-40 flex items-center shadow-lg shadow-blue-900/10 rounded-full bg-slate-900/95 border border-slate-700/80 p-1 text-white backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <button
+            type="button"
+            onClick={handleInstallClick}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white hover:text-blue-400 active:scale-95 transition"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <span>Add to Home Screen</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDismissedInSession(true)}
+            aria-label="Close"
+            className="p-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition mr-0.5"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Add to Home Screen Instructions Modal */}
+      {showInstallModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 shadow-sm">
+              <Smartphone className="w-7 h-7" />
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-800 mb-1">Add to Home Screen</h3>
+            <p className="text-xs text-slate-500 mb-5">
+              Install Astrea Timesheet on your phone for fast, 1-tap access like a native mobile app.
+            </p>
+
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs text-left space-y-3 mb-5">
+              <div className="flex items-start gap-2.5">
+                <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                  1
+                </div>
+                <div className="text-slate-600">
+                  Tap the <strong className="text-slate-800">Share</strong> button <Share className="w-3.5 h-3.5 inline mx-0.5 text-blue-600" /> in Safari, or browser menu <strong className="text-slate-800">(⋮)</strong> in Chrome.
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5">
+                <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                  2
+                </div>
+                <div className="text-slate-600">
+                  Scroll down and tap <strong className="text-slate-800">"Add to Home Screen"</strong> <PlusSquare className="w-3.5 h-3.5 inline mx-0.5 text-blue-600" /> or <strong className="text-slate-800">"Install app"</strong>.
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5">
+                <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                  3
+                </div>
+                <div className="text-slate-600">
+                  Tap <strong className="text-slate-800">"Add"</strong> in the top right corner. Done!
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowInstallModal(false)}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-200 active:scale-95 transition"
+              >
+                Got It
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsInstalled(true);
+                  localStorage.setItem('astrea_pwa_installed', 'true');
+                  setShowInstallModal(false);
+                }}
+                className="w-full py-2 text-slate-400 hover:text-slate-600 text-xs font-medium"
+              >
+                I have already added it
               </button>
             </div>
           </div>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <!-- Building / Office Icon -->
+  <g fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M96 416V160a32 32 0 0 1 32-32h128a32 32 0 0 1 32 32v256" />
+    <path d="M288 224h96a32 32 0 0 1 32 32v160" />
+    <path d="M64 416h384" />
+    <line x1="160" y1="192" x2="160.01" y2="192" stroke-width="28" />
+    <line x1="224" y1="192" x2="224.01" y2="192" stroke-width="28" />
+    <line x1="160" y1="256" x2="160.01" y2="256" stroke-width="28" />
+    <line x1="224" y1="256" x2="224.01" y2="256" stroke-width="28" />
+    <line x1="160" y1="320" x2="160.01" y2="320" stroke-width="28" />
+    <line x1="224" y1="320" x2="224.01" y2="320" stroke-width="28" />
+    <line x1="352" y1="288" x2="352.01" y2="288" stroke-width="28" />
+    <line x1="352" y1="352" x2="352.01" y2="352" stroke-width="28" />
+  </g>
+</svg>

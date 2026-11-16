@@ -1,0 +1,18 @@
+{
+  "name": "Astrea Timesheet Mobile",
+  "short_name": "Timesheet",
+  "description": "One-tap attendance & punch-in mobile application",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
