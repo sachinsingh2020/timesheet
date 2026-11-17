@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server';
 import { loginAndGetStatus } from '@/lib/salesforce';
+import { 
+  startAutoPunchScheduler, 
+  registerActiveShift, 
+  unregisterActiveShift, 
+  getPendingAutoPunchRecords 
+} from '@/lib/autoPunchManager';
 
 export async function POST(request: Request) {
   try {
+    startAutoPunchScheduler();
+
     const { username, password } = await request.json();
 
     if (!username || !password) {
@@ -10,6 +18,25 @@ export async function POST(request: Request) {
     }
 
     const data = await loginAndGetStatus(username, password);
+
+    if (data.success) {
+      if (data.punchStatus === 'in') {
+        registerActiveShift({
+          username,
+          password,
+          employeeName: data.userName,
+          workMode: 'office',
+          punchInTime: data.todayPunchIn || '',
+          shiftDate: data.selectedDate || '',
+          registeredAt: new Date().toISOString()
+        });
+      } else {
+        unregisterActiveShift(username);
+      }
+    }
+
+    const pendingNotices = getPendingAutoPunchRecords(username);
+    const autoPunchNotice = pendingNotices.length > 0 ? pendingNotices[0] : null;
 
     return NextResponse.json({
       success: data.success,
@@ -21,6 +48,7 @@ export async function POST(request: Request) {
       todayPunchIn: data.todayPunchIn,
       todayPunchOut: data.todayPunchOut,
       reportHistory: data.reportHistory,
+      autoPunchNotice,
       message: data.message
     });
   } catch (err: any) {

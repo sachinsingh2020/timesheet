@@ -30,7 +30,9 @@ import {
   Share,
   PlusSquare,
   Download,
-  X
+  X,
+  Bell,
+  BellRing
 } from 'lucide-react';
 
 interface PunchRecord {
@@ -44,6 +46,55 @@ interface SavedProfile {
   username: string;
   password: string;
   displayName: string;
+}
+
+interface AutoPunchNotice {
+  id: string;
+  username: string;
+  employeeName: string;
+  date: string;
+  punchInTime: string;
+  autoPunchOutTime: string;
+  totalHours: string;
+  acknowledged: boolean;
+  createdAt?: string;
+}
+
+// Generate polite, natural English notice for auto punch out
+function getAutoPunchDescription(record: AutoPunchNotice): string {
+  const now = new Date();
+  let recDate = new Date();
+  if (record.createdAt) {
+    const parsed = new Date(record.createdAt);
+    if (!isNaN(parsed.getTime())) recDate = parsed;
+  } else if (record.date) {
+    const parts = record.date.split(/[\/\-\.]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        recDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      } else {
+        recDate = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+      }
+    }
+  }
+
+  const isToday = now.toDateString() === recDate.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = yesterday.toDateString() === recDate.toDateString();
+
+  const d = String(recDate.getDate()).padStart(2, '0');
+  const m = String(recDate.getMonth() + 1).padStart(2, '0');
+  const y = recDate.getFullYear();
+  const formattedDate = `${d}-${m}-${y}`;
+
+  if (isToday) {
+    return `You completed your 9-hour shift today but didn't punch out within the 30-minute grace window. We automatically punched you out on your behalf at ${record.autoPunchOutTime}. Your total logged time for today is ${record.totalHours}.`;
+  }
+  if (isYesterday) {
+    return `You completed your 9-hour shift yesterday but forgot to punch out within the 30-minute grace window. We automatically punched you out on your behalf at ${record.autoPunchOutTime}. Your total logged time was ${record.totalHours}.`;
+  }
+  return `On ${formattedDate}, you forgot to punch out after completing your 9-hour shift. We automatically punched you out for you at ${record.autoPunchOutTime}. On that day, your total tracked time was ${record.totalHours}.`;
 }
 
 // Format time string (e.g., "09:35:37.565Z" or "06:35:40") to 12-hour AM/PM format ("9:35 AM", "6:35 PM")
@@ -199,6 +250,10 @@ export default function Home() {
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [dismissedInSession, setDismissedInSession] = useState(false);
 
+  // Notification & Auto Punch State
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const [autoPunchNotice, setAutoPunchNotice] = useState<AutoPunchNotice | null>(null);
+
   // Load profiles from localStorage on mount (no default accounts)
   useEffect(() => {
     try {
@@ -297,6 +352,80 @@ export default function Home() {
     setShowInstallModal(true);
   };
 
+  // Service Worker and Notification Setup
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if ('Notification' in window) {
+        setNotificationPermission(Notification.permission);
+      }
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(err => {
+          console.warn('Service worker registration failed:', err);
+        });
+      }
+    }
+  }, []);
+
+  // Show browser notification via Service Worker (fallback to native Notification)
+  const showNotification = async (title: string, options: NotificationOptions) => {
+    if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && reg.showNotification) {
+          await reg.showNotification(title, options);
+          return;
+        }
+      }
+      new Notification(title, options);
+    } catch {
+      try {
+        new Notification(title, options);
+      } catch (e) {
+        console.error('Notification error:', e);
+      }
+    }
+  };
+
+  // Request Notification permission
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      alert('This browser does not support desktop notifications.');
+      return;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      setNotificationPermission(perm);
+      if (perm === 'granted') {
+        showNotification('Shift Reminders Active 🔔', {
+          body: 'We will notify you 5 minutes after your 9-hour shift and auto-punch out after 30 minutes.',
+          icon: '/icon.svg',
+          badge: '/icon.svg'
+        });
+      }
+    } catch (err) {
+      console.error('Permission error:', err);
+    }
+  };
+
+  // Acknowledge Auto Punch Out Notice
+  const handleAcknowledgeAutoPunch = async () => {
+    if (!autoPunchNotice) return;
+    const noticeId = autoPunchNotice.id;
+    setAutoPunchNotice(null);
+    try {
+      await fetch('/api/acknowledge-auto-punch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: noticeId, username })
+      });
+    } catch (e) {
+      console.error('Error acknowledging auto-punch:', e);
+    }
+  };
+
   // Quick 1-Tap Login from a Profile Box
   const handleQuickLogin = async (profile: SavedProfile) => {
     setLoggingInUser(profile.username);
@@ -342,6 +471,9 @@ export default function Home() {
         setTodayPunchIn(data.todayPunchIn || null);
         setTodayPunchOut(data.todayPunchOut || null);
         setReportHistory(data.reportHistory || []);
+        if (data.autoPunchNotice) {
+          setAutoPunchNotice(data.autoPunchNotice);
+        }
         setIsLoggedIn(true);
 
         // If rememberUser is checked, update saved profiles in localStorage
@@ -394,6 +526,9 @@ export default function Home() {
         setTodayPunchIn(data.todayPunchIn || null);
         setTodayPunchOut(data.todayPunchOut || null);
         setReportHistory(data.reportHistory || []);
+        if (data.autoPunchNotice) {
+          setAutoPunchNotice(data.autoPunchNotice);
+        }
       } else {
         setErrorMsg(data.message || 'Could not refresh status');
       }
@@ -403,6 +538,66 @@ export default function Home() {
       setRefreshLoading(false);
     }
   };
+
+  // Shift progress monitor for 5-min reminder and 30-min auto-punch out
+  useEffect(() => {
+    if (!isLoggedIn || punchStatus !== 'in' || !todayPunchIn) return;
+
+    const checkInterval = setInterval(() => {
+      const worked = getWorkedTime(todayPunchIn, totalHours);
+      const elapsedMinutes = worked.hours * 60 + worked.minutes;
+      const todayDateKey = `${selectedDate || new Date().toISOString().split('T')[0]}_${username}`;
+
+      // 1. 5 minutes past 9 hours (545 minutes = 9h 05m): Send reminder notification
+      if (elapsedMinutes >= 545 && elapsedMinutes < 570) {
+        const reminderSent = localStorage.getItem(`astrea_reminder_sent_${todayDateKey}`);
+        if (!reminderSent) {
+          localStorage.setItem(`astrea_reminder_sent_${todayDateKey}`, 'true');
+          showNotification('Punch Out Reminder ⏰', {
+            body: 'Your standard 9-hour shift ended 5 minutes ago. Please punch out now, or your shift will be automatically punched out in 25 minutes.',
+            icon: '/icon.svg',
+            badge: '/icon.svg',
+            tag: 'punch-out-reminder'
+          });
+        }
+      }
+
+      // 2. 30 minutes past 9 hours (570 minutes = 9h 30m): Auto punch out
+      if (elapsedMinutes >= 570 && !punching) {
+        const autoDone = localStorage.getItem(`astrea_autopunch_triggered_${todayDateKey}`);
+        if (!autoDone) {
+          localStorage.setItem(`astrea_autopunch_triggered_${todayDateKey}`, 'true');
+
+          handlePunch().then(() => {
+            showNotification('Shift Auto-Punched Out ✅', {
+              body: 'You have been automatically punched out after 9h 30m. Total time logged: 9h 30m.',
+              icon: '/icon.svg',
+              badge: '/icon.svg',
+              tag: 'auto-punch-out'
+            });
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const totalHoursStr = `${Math.floor(elapsedMinutes / 60)}h ${elapsedMinutes % 60}m`;
+
+            setAutoPunchNotice({
+              id: `client_auto_${Date.now()}`,
+              username,
+              employeeName: userName || username,
+              date: selectedDate ? selectedDate.replace(/\//g, '-') : 'Today',
+              punchInTime: formatRawTime(todayPunchIn),
+              autoPunchOutTime: timeStr,
+              totalHours: totalHoursStr,
+              acknowledged: false,
+              createdAt: now.toISOString()
+            });
+          });
+        }
+      }
+    }, 15000);
+
+    return () => clearInterval(checkInterval);
+  }, [isLoggedIn, punchStatus, todayPunchIn, totalHours, selectedDate, username, userName, punching]);
 
   // Execute Punch Action
   const handlePunch = async () => {
@@ -766,6 +961,50 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* Automatic Punch Out Notice Modal */}
+        {autoPunchNotice && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center animate-in fade-in zoom-in-95 duration-150">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-4 shadow-sm">
+                <Clock className="w-7 h-7" />
+              </div>
+
+              <h3 className="text-lg font-bold text-slate-800 mb-1.5">Automatic Punch Out Notice</h3>
+              <p className="text-xs text-slate-600 mb-4 font-medium leading-relaxed text-left">
+                {getAutoPunchDescription(autoPunchNotice)}
+              </p>
+
+              {/* Details summary */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 mb-5 text-xs text-left space-y-2">
+                <div className="flex justify-between items-center text-slate-500">
+                  <span>Shift Date:</span>
+                  <span className="font-mono font-bold text-slate-700">{autoPunchNotice.date}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500">
+                  <span>Punch In Time:</span>
+                  <span className="font-mono font-bold text-slate-700">{formatRawTime(autoPunchNotice.punchInTime)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500">
+                  <span>Auto Punch Out Time:</span>
+                  <span className="font-mono font-bold text-rose-600">{autoPunchNotice.autoPunchOutTime}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500 border-t border-slate-200/60 pt-1.5">
+                  <span>Total Time Recorded:</span>
+                  <span className="font-mono font-bold text-emerald-600">{autoPunchNotice.totalHours}</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleAcknowledgeAutoPunch}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-200 active:scale-95 transition"
+              >
+                Got it, thank you!
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     );
   }
@@ -862,6 +1101,35 @@ export default function Home() {
               </span>
             )}
           </div>
+
+          {/* Notification Permission Prompt & Active Indicator */}
+          {punchStatus === 'in' && notificationPermission === 'default' && (
+            <div className="bg-blue-50 border border-blue-200/90 rounded-2xl p-3 mb-4 flex items-center justify-between gap-3 text-xs text-left">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-blue-100 text-blue-600 shrink-0">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block">Enable Punch Reminders</span>
+                  <span className="text-[11px] text-slate-500 block">Alerts 5m after 9h shift & auto punch-out in 30m</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={requestNotificationPermission}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm active:scale-95 transition shrink-0"
+              >
+                Enable
+              </button>
+            </div>
+          )}
+
+          {punchStatus === 'in' && notificationPermission === 'granted' && (
+            <div className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-emerald-600 mb-3">
+              <BellRing className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+              <span>Shift reminders active (auto-punchout enabled)</span>
+            </div>
+          )}
 
           {/* Today's Punch Times Summary if recorded */}
           {(todayPunchIn || todayPunchOut) && (
@@ -1165,6 +1433,50 @@ export default function Home() {
                 I have already added it
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Automatic Punch Out Notice Modal */}
+      {autoPunchNotice && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-4 shadow-sm">
+              <Clock className="w-7 h-7" />
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-800 mb-1.5">Automatic Punch Out Notice</h3>
+            <p className="text-xs text-slate-600 mb-4 font-medium leading-relaxed text-left">
+              {getAutoPunchDescription(autoPunchNotice)}
+            </p>
+
+            {/* Details summary */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 mb-5 text-xs text-left space-y-2">
+              <div className="flex justify-between items-center text-slate-500">
+                <span>Shift Date:</span>
+                <span className="font-mono font-bold text-slate-700">{autoPunchNotice.date}</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-500">
+                <span>Punch In Time:</span>
+                <span className="font-mono font-bold text-slate-700">{formatRawTime(autoPunchNotice.punchInTime)}</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-500">
+                <span>Auto Punch Out Time:</span>
+                <span className="font-mono font-bold text-rose-600">{autoPunchNotice.autoPunchOutTime}</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-500 border-t border-slate-200/60 pt-1.5">
+                <span>Total Time Recorded:</span>
+                <span className="font-mono font-bold text-emerald-600">{autoPunchNotice.totalHours}</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAcknowledgeAutoPunch}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-200 active:scale-95 transition"
+            >
+              Got it, thank you!
+            </button>
           </div>
         </div>
       )}

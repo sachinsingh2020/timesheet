@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executePunch } from '@/lib/salesforce';
+import { unregisterActiveShift } from '@/lib/autoPunchManager';
 
 export async function POST(request: Request) {
   try {
@@ -10,6 +11,10 @@ export async function POST(request: Request) {
     }
 
     const result = await executePunch(username, password, workMode || 'office');
+
+    if (result.success && result.newStatus !== 'in') {
+      unregisterActiveShift(username);
+    }
 
     return NextResponse.json(result);
   } catch (err: any) {
