@@ -4,7 +4,8 @@ import {
   startAutoPunchScheduler, 
   registerActiveShift, 
   unregisterActiveShift, 
-  getPendingAutoPunchRecords 
+  getPendingAutoPunchRecords,
+  isPunchedInViaApp 
 } from '@/lib/autoPunchManager';
 
 export async function POST(request: Request) {
@@ -19,17 +20,23 @@ export async function POST(request: Request) {
 
     const data = await loginAndGetStatus(username, password);
 
+    // Only register/maintain auto punch if this user originally punched in through OUR app
+    const isAppPunch = isPunchedInViaApp(username, data.selectedDate);
+
     if (data.success) {
       if (data.punchStatus === 'in') {
-        registerActiveShift({
-          username,
-          password,
-          employeeName: data.userName,
-          workMode: 'office',
-          punchInTime: data.todayPunchIn || '',
-          shiftDate: data.selectedDate || '',
-          registeredAt: new Date().toISOString()
-        });
+        if (isAppPunch) {
+          registerActiveShift({
+            username,
+            password,
+            employeeName: data.userName,
+            workMode: 'office',
+            punchInTime: data.todayPunchIn || '',
+            shiftDate: data.selectedDate || '',
+            punchedInViaApp: true,
+            registeredAt: new Date().toISOString()
+          });
+        }
       } else {
         unregisterActiveShift(username);
       }
@@ -48,6 +55,7 @@ export async function POST(request: Request) {
       todayPunchIn: data.todayPunchIn,
       todayPunchOut: data.todayPunchOut,
       reportHistory: data.reportHistory,
+      punchedInViaApp: isAppPunch,
       autoPunchNotice,
       message: data.message
     });

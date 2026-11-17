@@ -9,6 +9,7 @@ export interface ActiveShift {
   workMode: 'office' | 'home';
   punchInTime: string;
   shiftDate: string;
+  punchedInViaApp: boolean;
   registeredAt: string;
 }
 
@@ -90,12 +91,26 @@ export function registerActiveShift(shift: ActiveShift) {
     shifts[index] = {
       ...shifts[index],
       ...shift,
-      password: shift.password || shifts[index].password
+      password: shift.password || shifts[index].password,
+      punchedInViaApp: shift.punchedInViaApp ?? shifts[index].punchedInViaApp
     };
   } else {
     shifts.push(shift);
   }
   saveActiveShifts(shifts);
+}
+
+export function isPunchedInViaApp(username: string, shiftDate?: string): boolean {
+  if (!username) return false;
+  const shifts = getActiveShifts();
+  const shift = shifts.find(s => s.username === username);
+  if (!shift || !shift.punchedInViaApp) return false;
+  if (shiftDate && shift.shiftDate) {
+    const s1 = shiftDate.replace(/[\/\-\.]/g, '');
+    const s2 = shift.shiftDate.replace(/[\/\-\.]/g, '');
+    if (s1 !== s2) return false;
+  }
+  return true;
 }
 
 export function unregisterActiveShift(username: string) {
@@ -175,6 +190,9 @@ export async function checkAndAutoPunch() {
 
   for (const shift of shifts) {
     if (!shift.password || !shift.punchInTime) continue;
+
+    // Automatic punch out ONLY applies to shifts punched in through our application
+    if (!shift.punchedInViaApp) continue;
 
     const elapsed = calculateElapsedMinutes(shift.punchInTime, shift.shiftDate);
     if (elapsed >= AUTO_PUNCH_MINUTES) {

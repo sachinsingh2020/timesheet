@@ -254,6 +254,7 @@ export default function Home() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const [notificationDismissed, setNotificationDismissed] = useState(false);
   const [autoPunchNotice, setAutoPunchNotice] = useState<AutoPunchNotice | null>(null);
+  const [punchedInViaApp, setPunchedInViaApp] = useState(false);
 
   // Load profiles from localStorage on mount (no default accounts)
   useEffect(() => {
@@ -481,6 +482,11 @@ export default function Home() {
         if (data.autoPunchNotice) {
           setAutoPunchNotice(data.autoPunchNotice);
         }
+
+        const dateKey = (data.selectedDate || new Date().toISOString().split('T')[0]).replace(/[\/\-\.]/g, '');
+        const clientAppPunch = localStorage.getItem(`astrea_app_punch_${userToAuth}_${dateKey}`) === 'true';
+        setPunchedInViaApp(!!(data.punchedInViaApp || clientAppPunch));
+
         setIsLoggedIn(true);
 
         // If rememberUser is checked, update saved profiles in localStorage
@@ -536,6 +542,10 @@ export default function Home() {
         if (data.autoPunchNotice) {
           setAutoPunchNotice(data.autoPunchNotice);
         }
+
+        const dateKey = (data.selectedDate || new Date().toISOString().split('T')[0]).replace(/[\/\-\.]/g, '');
+        const clientAppPunch = localStorage.getItem(`astrea_app_punch_${username}_${dateKey}`) === 'true';
+        setPunchedInViaApp(!!(data.punchedInViaApp || clientAppPunch));
       } else {
         setErrorMsg(data.message || 'Could not refresh status');
       }
@@ -548,7 +558,8 @@ export default function Home() {
 
   // Shift progress monitor for 5-min reminder and 30-min auto-punch out
   useEffect(() => {
-    if (!isLoggedIn || punchStatus !== 'in' || !todayPunchIn) return;
+    // Only auto-punch out and remind if user specifically punched in via this app today
+    if (!isLoggedIn || punchStatus !== 'in' || !todayPunchIn || !punchedInViaApp) return;
 
     const checkInterval = setInterval(() => {
       const worked = getWorkedTime(todayPunchIn, totalHours);
@@ -604,7 +615,7 @@ export default function Home() {
     }, 15000);
 
     return () => clearInterval(checkInterval);
-  }, [isLoggedIn, punchStatus, todayPunchIn, totalHours, selectedDate, username, userName, punching]);
+  }, [isLoggedIn, punchStatus, todayPunchIn, totalHours, selectedDate, username, userName, punching, punchedInViaApp]);
 
   // Execute Punch Action
   const handlePunch = async () => {
@@ -619,6 +630,14 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.success) {
+        const dateKey = (selectedDate || new Date().toISOString().split('T')[0]).replace(/[\/\-\.]/g, '');
+        if (data.newStatus === 'in') {
+          setPunchedInViaApp(true);
+          localStorage.setItem(`astrea_app_punch_${username}_${dateKey}`, 'true');
+        } else {
+          setPunchedInViaApp(false);
+          localStorage.removeItem(`astrea_app_punch_${username}_${dateKey}`);
+        }
         setPunchStatus(data.newStatus);
         setSuccessMsg(data.message);
         setLastActionTime(data.timestamp);
@@ -1161,10 +1180,23 @@ export default function Home() {
                 Today's Shift Completed
               </span>
             ) : punchStatus === 'in' ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                Currently Punched IN
-              </span>
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Currently Punched IN
+                </span>
+                {punchedInViaApp ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                    Punched in via this App (Auto punch-out active)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                    Punched in via Official Portal (Auto punch-out disabled)
+                  </span>
+                )}
+              </div>
             ) : (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
                 <span className="w-2 h-2 rounded-full bg-amber-500"></span>
@@ -1174,7 +1206,7 @@ export default function Home() {
           </div>
 
           {/* Notification Permission Prompt & Active Indicator */}
-          {punchStatus === 'in' && notificationPermission === 'default' && (
+          {punchStatus === 'in' && punchedInViaApp && notificationPermission === 'default' && (
             <div className="bg-blue-50 border border-blue-200/90 rounded-2xl p-3 mb-4 flex items-center justify-between gap-3 text-xs text-left">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-blue-100 text-blue-600 shrink-0">
@@ -1195,7 +1227,7 @@ export default function Home() {
             </div>
           )}
 
-          {punchStatus === 'in' && notificationPermission === 'granted' && (
+          {punchStatus === 'in' && punchedInViaApp && notificationPermission === 'granted' && (
             <div className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-emerald-600 mb-3">
               <BellRing className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
               <span>Shift reminders active (auto-punchout enabled)</span>
