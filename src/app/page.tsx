@@ -252,6 +252,7 @@ export default function Home() {
 
   // Notification & Auto Punch State
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const [notificationDismissed, setNotificationDismissed] = useState(false);
   const [autoPunchNotice, setAutoPunchNotice] = useState<AutoPunchNotice | null>(null);
 
   // Load profiles from localStorage on mount (no default accounts)
@@ -428,6 +429,9 @@ export default function Home() {
 
   // Quick 1-Tap Login from a Profile Box
   const handleQuickLogin = async (profile: SavedProfile) => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      requestNotificationPermission();
+    }
     setLoggingInUser(profile.username);
     setUsername(profile.username);
     setPassword(profile.password);
@@ -437,6 +441,9 @@ export default function Home() {
 
   // Login from manual form
   const handleManualLogin = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      requestNotificationPermission();
+    }
     if (!username.trim() || !password.trim()) {
       setErrorMsg('Please enter both Username and Password.');
       return;
@@ -680,6 +687,38 @@ export default function Home() {
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Astrea Timesheet</h1>
             <p className="text-xs text-slate-500 mt-1">Tap your profile box to punch in immediately</p>
           </div>
+
+          {/* Notification Permission Card (Login Screen) */}
+          {typeof window !== 'undefined' && 'Notification' in window && notificationPermission === 'default' && !notificationDismissed && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/90 rounded-2xl p-3 mb-4 shadow-sm flex items-center justify-between gap-3 text-xs text-left animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-200">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-800 block text-xs">Allow Push Notifications?</span>
+                  <span className="text-[11px] text-slate-500 block">Get reminded at 9h 5m & auto-punchout alerts</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={requestNotificationPermission}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm shadow-blue-200 active:scale-95 transition"
+                >
+                  Allow
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotificationDismissed(true)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+                  title="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {errorMsg && (
             <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl p-3 mb-4 flex items-start gap-2 shadow-sm">
@@ -1062,6 +1101,38 @@ export default function Home() {
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl p-3 mb-4 flex items-start gap-2 shadow-sm">
             <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
             <div className="flex-1 font-medium">{successMsg}</div>
+          </div>
+        )}
+
+        {/* Notification Permission Card (Dashboard Screen) */}
+        {typeof window !== 'undefined' && 'Notification' in window && notificationPermission === 'default' && !notificationDismissed && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/90 rounded-2xl p-3 mb-4 shadow-sm flex items-center justify-between gap-3 text-xs text-left animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-200">
+                <Bell className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-bold text-slate-800 block text-xs">Allow Push Notifications?</span>
+                <span className="text-[11px] text-slate-500 block">Get reminded at 9h 5m & auto-punchout alerts</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={requestNotificationPermission}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm shadow-blue-200 active:scale-95 transition"
+              >
+                Allow
+              </button>
+              <button
+                type="button"
+                onClick={() => setNotificationDismissed(true)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+                title="Dismiss"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
 
